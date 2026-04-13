@@ -517,6 +517,19 @@ fn section_agent() -> (String, String) {
     cprintln!(C.bold, "--- Step 3: Agent Configuration ---");
     println!();
 
+    // Show agent installation guide
+    print_box(&[
+        "Agent Installation Guide",
+        "",
+        "claude:  npm install -g @anthropic-ai/claude-code",
+        "kiro:    npm install -g @koryhutchison/kiro-cli",
+        "codex:   npm install -g openai-codex (requires OpenAI API key)",
+        "gemini:  npm install -g @google/gemini-cli",
+        "",
+        "Make sure the agent is in your PATH before continuing.",
+    ]);
+    println!();
+
     let choices = ["claude", "kiro", "codex", "gemini"];
     let idx = prompt_choice("  Select agent:", &choices);
     let agent = choices[idx];
