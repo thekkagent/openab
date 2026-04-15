@@ -36,6 +36,13 @@ Discord Discussion URL: https://discordapp.com/channels/1491295327620169908/1493
 | `charts/openab/templates/deployment.yaml` | Render pod-level extensibility controls into `Deployment.spec.template` |
 | `charts/openab/tests/helm-template-test.sh` | Add coverage for the new Helm rendering behaviors and fix the test harness counter bug under `set -e` |
 
+## Key decisions
+
+- The first implementation is intentionally scoped to pod / deployment extensibility only
+- Custom images remain the primary solution for stable toolchains
+- `initContainers` + shared volumes are the supported lightweight bootstrap path
+- `PodDisruptionBudget`, RBAC, and generic extra objects are deferred to follow-up PRs
+
 ## At a Glance
 
 ```text
@@ -96,7 +103,7 @@ References:
 - `website/docs/user-guide/docker.md`
 - `website/docs/getting-started/nix-setup.md`
 
-**Other references (optional):**
+**Other references:**
 
 I also reviewed Bitnami charts and Helm / Kubernetes best practices.
 
@@ -221,3 +228,9 @@ bash charts/openab/tests/helm-template-test.sh
 Result:
 
 - `14 passed, 0 failed`
+
+## Open questions
+
+1. Should follow-up work add `PodDisruptionBudget` before or after chart-managed ServiceAccount support?
+2. Should generic extra objects be exposed via `extraDeploy`, `extraObjects`, or deferred further?
+3. Should `serviceAccountName` remain binding-only for now, or should chart-managed creation be the next step?
