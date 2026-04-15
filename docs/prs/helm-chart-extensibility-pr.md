@@ -27,6 +27,15 @@ Closes #
 
 Discord Discussion URL: https://discordapp.com/channels/1491295327620169908/1493841502529523732
 
+## What's in this PR
+
+| File | Purpose |
+|---|---|
+| `charts/openab/values.yaml` | Add first-phase Helm values for pod / deployment extensibility |
+| `charts/openab/templates/_helpers.tpl` | Add helper resolution for per-agent image pull policy, image pull secrets, service account binding, and merged pod metadata |
+| `charts/openab/templates/deployment.yaml` | Render pod-level extensibility controls into `Deployment.spec.template` |
+| `charts/openab/tests/helm-template-test.sh` | Add coverage for the new Helm rendering behaviors and fix the test harness counter bug under `set -e` |
+
 ## At a Glance
 
 ```text
@@ -114,34 +123,20 @@ Relevant upstream guidance also supports this direction:
 
 ## Proposed Solution
 
-This PR is intended as a proposal-first change, not an implementation PR yet.
+This PR implements the first phase of pod / deployment extensibility for the OpenAB Helm chart.
 
-The proposed direction is to expand the OpenAB Helm chart in phases so it exposes a more standard Kubernetes extension surface without turning the chart into a giant schema.
-
-Suggested phases:
-
-### Phase 1: highest-value gaps
+Implemented scope:
 
 - `imagePullSecrets`
 - per-agent `imagePullPolicy`
 - pod annotations / labels
 - probes
 - `lifecycle`
-- ServiceAccount binding support
-
-### Phase 2: pod composition hooks
-
 - `initContainers`
 - sidecars
 - `extraVolumes`
 - `extraVolumeMounts`
-- extra ConfigMap / Secret injection patterns
-
-### Phase 3: advanced / optional controls
-
-- optional `pdb`
-- optional `extraDeploy` / raw extra objects
-- possibly chart-managed ServiceAccount / RBAC, if needed
+- existing `serviceAccountName` binding
 
 For the "install tools" question specifically, the proposal recommends two clear paths:
 
@@ -151,7 +146,14 @@ For the "install tools" question specifically, the proposal recommends two clear
 2. **`initContainers` + shared volume**
    a lightweight bootstrap path for small binaries or startup initialization
 
-The practical outcome of this PR, if accepted, would be to align on the proposal first and follow up with a smaller implementation PR or phased implementation PRs.
+Explicitly out of scope in this PR:
+
+- `PodDisruptionBudget`
+- chart-managed ServiceAccount creation
+- RBAC resources
+- generic extra objects such as `extraDeploy`
+
+This keeps the implementation focused on `Deployment.spec.template`, solves the highest-value deployment gaps first, and avoids mixing pod extensibility with broader chart resource management.
 
 ## Why this approach?
 
@@ -197,14 +199,25 @@ Although these features are valid chart capabilities, they extend beyond pod tem
 
 ## Validation
 
-- [ ] `cargo check` passes
-- [ ] `cargo test` passes (including new tests)
-- [x] Manual review of the current chart structure and deployment gaps
+- [x] Helm chart template tests pass
 - [x] Prior art research across OpenClaw, Hermes Agent, Bitnami charts, Helm docs, and Kubernetes docs
-- [x] Proposal / RFC documents prepared before implementation
-- [ ] Screenshots, logs, or terminal output demonstrating the feature working end-to-end
+- [x] Manual rendering coverage added for:
+  - `imagePullSecrets`
+  - per-agent `imagePullPolicy`
+  - `initContainers`
+  - sidecars
+  - extra volumes / mounts
+  - probes
+  - `lifecycle`
+  - `serviceAccountName`
+  - pod annotations / labels
 
-Notes:
+Validation command used:
 
-- This PR markdown is proposal-only and does not claim implementation is complete.
-- The appropriate next step would be to align on scope first, then open an implementation PR using this proposal as the design basis.
+```bash
+bash charts/openab/tests/helm-template-test.sh
+```
+
+Result:
+
+- `14 passed, 0 failed`
