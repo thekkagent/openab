@@ -1,8 +1,26 @@
-# Helm Chart Extensibility Proposal Issue Draft
+# Proposal: Helm Chart Extensibility for Real-World Kubernetes Deployments
+
+## Summary
+
+OpenAB's Helm chart is currently optimized for a minimal install path, but it is missing many deployment extension points that operators typically expect from a reusable open-source chart.
+
+This proposal suggests expanding the chart in phases so it can better support:
+
+- private registry deployments
+- startup bootstrap workflows
+- policy-heavy or production-oriented Kubernetes clusters
+- common pod-level customization without requiring users to fork the chart
+
+The intended direction is:
+
+- keep the default chart simple
+- expose standard Kubernetes extension points directly in the chart
+- treat custom images as the primary answer for stable toolchains
+- support `initContainers` bootstrap as a lightweight complement, not the main packaging model
 
 ## What problem does this solve?
 
-OpenAB's Helm chart is currently optimized for a minimal happy path, but it is missing many deployment extension points that operators typically expect from a reusable open-source chart.
+Today, the OpenAB Helm chart does not expose many common deployment controls that operators expect in real Kubernetes environments.
 
 Examples include:
 
@@ -19,7 +37,7 @@ Examples include:
 
 This leaves users with a few unattractive options:
 
-1. rebuild a custom image for minor deployment-specific needs
+1. rebuild a custom image for relatively minor deployment-specific needs
 2. patch rendered manifests after `helm template`
 3. fork the chart just to add standard Kubernetes fields
 
@@ -57,9 +75,11 @@ Discord Discussion URL: https://discordapp.com/channels/1491295327620169908/1493
 
 ## Prior Art & Industry Research
 
-**OpenClaw:**
+### OpenClaw
 
-I reviewed the local OpenClaw repository and its Kubernetes deployment manifests. While it does not currently provide a Helm chart in this repo, it does treat startup bootstrap as a first-class deployment concern. In particular, it uses an `initContainer` to prepare configuration and workspace state before the main container starts.
+I reviewed the local OpenClaw repository and its Kubernetes deployment manifests.
+
+While OpenClaw does not currently expose a Helm chart in this repo, it does treat startup bootstrap as a first-class deployment concern. In particular, it uses an `initContainer` to prepare configuration and workspace state before the main container starts.
 
 This suggests:
 
@@ -71,9 +91,11 @@ Reference:
 
 - `scripts/k8s/manifests/deployment.yaml`
 
-**Hermes Agent:**
+### Hermes Agent
 
-I also reviewed Hermes Agent's Docker and deployment documentation. Hermes takes a clearer stance on tool installation: stable toolchains should primarily be handled through custom images or clearly defined mutable runtime environments, not by stretching the chart into a package manager.
+I also reviewed Hermes Agent's Docker and deployment documentation.
+
+Hermes takes a clearer stance on tool installation: stable toolchains should primarily be handled through custom images or clearly defined mutable runtime environments, not by stretching the chart into a package manager.
 
 This suggests:
 
@@ -87,7 +109,7 @@ References:
 - `website/docs/user-guide/docker.md`
 - `website/docs/getting-started/nix-setup.md`
 
-**Other references:**
+### Other references
 
 I also reviewed Bitnami charts and Helm / Kubernetes best practices.
 
@@ -111,8 +133,6 @@ That does not mean OpenAB needs to implement everything immediately, but it does
 ## Proposed Solution
 
 I would like to propose a phased expansion of the OpenAB Helm chart so it exposes a more standard Kubernetes extension surface, instead of requiring users to fork the chart for ordinary deployment needs.
-
-Suggested direction:
 
 ### Phase 1: highest-value gaps
 
@@ -139,7 +159,7 @@ Suggested direction:
 
 For the "install tools" question specifically, I think the chart should support two clear paths:
 
-1. **custom image**
+1. **Custom image**
    the preferred path for stable, repeatable, production-grade toolchains
 
 2. **`initContainers` + shared volume**
