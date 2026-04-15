@@ -175,29 +175,25 @@ Tradeoffs and limitations:
 
 ## Alternatives Considered
 
-### 1. Keep the chart minimal and add nothing
+The main implementation question is not whether Helm extensibility should be improved, but how much should be included in the first implementation PR.
+
+### 1. Do the minimum: only `imagePullSecrets`
 
 Rejected.
 
-This keeps the chart simple, but it remains too restrictive for private registries, policy-heavy clusters, and common startup bootstrap use cases.
+This would solve the most immediate private-registry gap, but it would still leave the chart without probes, lifecycle hooks, and pod composition controls such as `initContainers`, sidecars, and extra volumes. The result would still feel incomplete for real deployments.
 
-### 2. Add only `imagePullSecrets`
+### 2. Implement pod / deployment extensibility only
 
-Rejected as the full answer.
+Chosen.
 
-It solves the most obvious gap, but still leaves the chart without probes, lifecycle hooks, pod composition hooks, and other common deployment controls.
+This keeps the first implementation focused on a single surface area: `Deployment.spec.template`. It addresses the highest-value deployment gaps first, including private registry support, health / lifecycle controls, and pod composition hooks, while keeping the PR cohesive and reviewable.
 
-### 3. Add only a generic `extraPodSpec`
-
-Rejected as the main design.
-
-It is flexible, but too opaque. It shifts too much chart knowledge onto the user. A smaller set of first-class fields plus a limited escape hatch is usually a better experience.
-
-### 4. Model every possible Kubernetes field individually
+### 3. Implement everything at once, including PDB, RBAC, and generic extra objects
 
 Rejected.
 
-That would cause the values schema to grow too quickly and become harder to maintain. A phased rollout is more realistic.
+Although these features are valid chart capabilities, they extend beyond pod template extensibility and would make the first implementation significantly broader. Mixing pod-level changes with additional chart-managed resources would increase review complexity and make the initial rollout harder to reason about.
 
 ## Validation
 
