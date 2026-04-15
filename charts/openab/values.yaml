@@ -4,6 +4,11 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
+imagePullSecrets: []
+
+podAnnotations: {}
+podLabels: {}
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
@@ -54,6 +59,8 @@ agents:
     #   affinity: {}
     #   image: "ghcr.io/openabdev/openab-claude:latest"
     image: ""
+    imagePullPolicy: ""
+    imagePullSecrets: []
     command: kiro-cli
     args:
       - acp
@@ -90,6 +97,17 @@ agents:
       size: 1Gi  # defaults to 1Gi if not set
     agentsMd: ""
     resources: {}
+    serviceAccountName: ""
+    podAnnotations: {}
+    podLabels: {}
+    livenessProbe: {}
+    readinessProbe: {}
+    startupProbe: {}
+    lifecycle: {}
+    initContainers: []
+    sidecars: []
+    extraVolumes: []
+    extraVolumeMounts: []
     nodeSelector: {}
     tolerations: []
     affinity: {}

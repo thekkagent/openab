@@ -53,7 +53,39 @@ app.kubernetes.io/component: {{ .agent }}
 
 {{/* Resolve imagePullPolicy: global default (per-agent image string has no pullPolicy) */}}
 {{- define "openab.agentImagePullPolicy" -}}
-{{- .ctx.Values.image.pullPolicy }}
+{{- default .ctx.Values.image.pullPolicy .cfg.imagePullPolicy }}
+{{- end }}
+
+{{/* Resolve imagePullSecrets: per-agent override or global default */}}
+{{- define "openab.agentImagePullSecrets" -}}
+{{- $pullSecrets := .cfg.imagePullSecrets }}
+{{- if not $pullSecrets }}
+{{- $pullSecrets = .ctx.Values.imagePullSecrets }}
+{{- end }}
+{{- range $pullSecrets }}
+- name: {{ . | quote }}
+{{- end }}
+{{- end }}
+
+{{/* Resolve serviceAccountName: per-agent override only */}}
+{{- define "openab.agentServiceAccountName" -}}
+{{- default "" .cfg.serviceAccountName }}
+{{- end }}
+
+{{/* Merge pod annotations: global baseline + per-agent override */}}
+{{- define "openab.agentPodAnnotations" -}}
+{{- $annotations := mergeOverwrite (dict) (.ctx.Values.podAnnotations | default (dict)) (.cfg.podAnnotations | default (dict)) -}}
+{{- if $annotations }}
+{{- toYaml $annotations }}
+{{- end }}
+{{- end }}
+
+{{/* Merge pod labels: global baseline + per-agent override */}}
+{{- define "openab.agentPodLabels" -}}
+{{- $labels := mergeOverwrite (dict) (.ctx.Values.podLabels | default (dict)) (.cfg.podLabels | default (dict)) -}}
+{{- if $labels }}
+{{- toYaml $labels }}
+{{- end }}
 {{- end }}
 
 {{/* Agent enabled: default true unless explicitly set to false */}}
