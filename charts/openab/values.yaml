@@ -4,6 +4,9 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
+# Both formats supported:
+#   - name: regcred          # K8s native format
+#   - my-secret              # shorthand string format
 imagePullSecrets: []
 
 podAnnotations: {}

@@ -82,6 +82,9 @@ spec:
             - name: HOME
               value: {{ $cfg.workingDir | default "/home/agent" }}
             {{- range $k, $v := $cfg.env }}
+            {{- if kindIs "slice" $v }}
+            {{- fail (printf "env.%s is a list — env values must be strings or maps (valueFrom)" $k) }}
+            {{- end }}
             - name: {{ $k }}
               {{- if kindIs "map" $v }}
               {{- toYaml $v | nindent 14 }}

@@ -83,12 +83,14 @@ data:
     working_dir = "{{ $cfg.workingDir | default "/home/agent" }}"
     {{- $stringEnv := dict }}
     {{- range $k, $v := $cfg.env }}
-    {{- if not (kindIs "map" $v) }}
+    {{- if kindIs "slice" $v }}
+    {{- fail (printf "env.%s is a list — env values must be strings or maps (valueFrom)" $k) }}
+    {{- else if not (kindIs "map" $v) }}
     {{- $_ := set $stringEnv $k $v }}
     {{- end }}
     {{- end }}
     {{- if $stringEnv }}
-    env = { {{ $first := true }}{{ range $k, $v := $stringEnv }}{{ if not $first }}, {{ end }}{{ $k }} = "{{ $v }}"{{ $first = false }}{{ end }} }
+    env = { {{ $first := true }}{{ range $k, $v := $stringEnv }}{{ if not $first }}, {{ end }}{{ $k }} = {{ $v | toJson }}{{ $first = false }}{{ end }} }
     {{- end }}
 
     [pool]

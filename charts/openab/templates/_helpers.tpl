@@ -63,7 +63,11 @@ app.kubernetes.io/component: {{ .agent }}
 {{- $pullSecrets = .cfg.imagePullSecrets -}}
 {{- end }}
 {{- range $pullSecrets }}
+{{- if kindIs "map" . }}
+- name: {{ .name | quote }}
+{{- else }}
 - name: {{ . | quote }}
+{{- end }}
 {{- end }}
 {{- end }}
 
@@ -92,11 +96,7 @@ labels merged last so users cannot hijack them. Hijacking would produce
 duplicate YAML keys AND break Deployment→Pod selector matching.
 */}}
 {{- define "openab.agentPodLabels" -}}
-{{- $reserved := dict
-    "app.kubernetes.io/name" (include "openab.name" .ctx)
-    "app.kubernetes.io/instance" .ctx.Release.Name
-    "app.kubernetes.io/component" .agent
--}}
+{{- $reserved := include "openab.selectorLabels" . | fromYaml -}}
 {{- $labels := mergeOverwrite (dict)
     (.ctx.Values.podLabels | default (dict))
     (.cfg.podLabels | default (dict))
