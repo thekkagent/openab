@@ -71,9 +71,17 @@ app.kubernetes.io/component: {{ .agent }}
 {{- end }}
 {{- end }}
 
-{{/* Resolve serviceAccountName: per-agent only, empty by default (uses namespace default SA) */}}
+{{/*
+Resolve serviceAccountName:
+- If serviceAccount.create is true: use serviceAccount.name or fallback to <agentFullname>
+- Else: use serviceAccountName (for referencing externally-created SAs), or empty (namespace default)
+*/}}
 {{- define "openab.agentServiceAccountName" -}}
-{{- default "" .cfg.serviceAccountName }}
+{{- if (.cfg.serviceAccount).create -}}
+{{- default (include "openab.agentFullname" .) .cfg.serviceAccount.name -}}
+{{- else -}}
+{{- default "" .cfg.serviceAccountName -}}
+{{- end -}}
 {{- end }}
 
 {{/*

@@ -1,0 +1,56 @@
+suite: PodDisruptionBudget
+templates:
+  - templates/pdb.yaml
+tests:
+  - it: does not create PDB by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates PDB with minAvailable when enabled
+    set:
+      agents.kiro.podDisruptionBudget.enabled: true
+      agents.kiro.podDisruptionBudget.minAvailable: 1
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: kiro
+
+  - it: creates PDB with maxUnavailable
+    set:
+      agents.kiro.podDisruptionBudget.enabled: true
+      agents.kiro.podDisruptionBudget.maxUnavailable: 1
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+
+  - it: supports percentage values
+    set:
+      agents.kiro.podDisruptionBudget.enabled: true
+      agents.kiro.podDisruptionBudget.minAvailable: 50%
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 50%
+
+  - it: fails when both minAvailable and maxUnavailable are set
+    set:
+      agents.kiro.podDisruptionBudget.enabled: true
+      agents.kiro.podDisruptionBudget.minAvailable: 1
+      agents.kiro.podDisruptionBudget.maxUnavailable: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: "cannot set both minAvailable and maxUnavailable"
+
+  - it: fails when neither minAvailable nor maxUnavailable are set
+    set:
+      agents.kiro.podDisruptionBudget.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "must set either minAvailable or maxUnavailable"

@@ -1,0 +1,140 @@
+suite: RBAC (Role + ClusterRole)
+release:
+  name: test
+templates:
+  - templates/role.yaml
+  - templates/rolebinding.yaml
+  - templates/clusterrole.yaml
+  - templates/clusterrolebinding.yaml
+tests:
+  - it: creates no RBAC resources by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates Role when rbac.create=true
+    template: templates/role.yaml
+    set:
+      agents.kiro.rbac.create: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Role
+
+  - it: creates RoleBinding when rbac.create=true
+    template: templates/rolebinding.yaml
+    set:
+      agents.kiro.rbac.create: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: RoleBinding
+
+  - it: Role renders rules correctly
+    template: templates/role.yaml
+    set:
+      agents.kiro.rbac.create: true
+      agents.kiro.rbac.rules:
+        - apiGroups: [""]
+          resources: ["configmaps"]
+          verbs: ["get", "list"]
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.name
+          value: test-openab-kiro
+      - equal:
+          path: rules[0].apiGroups
+          value: [""]
+      - equal:
+          path: rules[0].resources
+          value: ["configmaps"]
+      - equal:
+          path: rules[0].verbs
+          value: ["get", "list"]
+
+  - it: Role with empty rules still renders
+    template: templates/role.yaml
+    set:
+      agents.kiro.rbac.create: true
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: rules
+          value: []
+
+  - it: RoleBinding references the Role and ServiceAccount
+    template: templates/rolebinding.yaml
+    set:
+      agents.kiro.serviceAccount.create: true
+      agents.kiro.rbac.create: true
+    asserts:
+      - isKind:
+          of: RoleBinding
+      - equal:
+          path: roleRef.kind
+          value: Role
+      - equal:
+          path: roleRef.name
+          value: test-openab-kiro
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: test-openab-kiro
+
+  - it: creates ClusterRole when rbac.createClusterRole=true
+    template: templates/clusterrole.yaml
+    set:
+      agents.kiro.rbac.createClusterRole: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ClusterRole
+
+  - it: creates ClusterRoleBinding when rbac.createClusterRole=true
+    template: templates/clusterrolebinding.yaml
+    set:
+      agents.kiro.rbac.createClusterRole: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ClusterRoleBinding
+
+  - it: ClusterRole renders clusterRules correctly
+    template: templates/clusterrole.yaml
+    set:
+      agents.kiro.rbac.createClusterRole: true
+      agents.kiro.rbac.clusterRules:
+        - apiGroups: [""]
+          resources: ["nodes"]
+          verbs: ["get"]
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: rules[0].resources
+          value: ["nodes"]
+
+  - it: rbac.create=false does not create Role
+    template: templates/role.yaml
+    set:
+      agents.kiro.rbac.createClusterRole: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rbac.createClusterRole=false does not create ClusterRole
+    template: templates/clusterrole.yaml
+    set:
+      agents.kiro.rbac.create: true
+    asserts:
+      - hasDocuments:
+          count: 0

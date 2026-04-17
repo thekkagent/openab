@@ -194,6 +194,28 @@ agents:
     extraContainers: []
     extraVolumes: []
     extraVolumeMounts: []
+    # -- ServiceAccount, RBAC, PodDisruptionBudget
+    # serviceAccountName (above) still supported for referencing externally-created SAs.
+    # When serviceAccount.create is true, the chart creates a new SA named <agentFullname>
+    # (or serviceAccount.name if set), overriding serviceAccountName.
+    serviceAccount:
+      create: false
+      name: ""                            # empty = use <agentFullname>
+      automountServiceAccountToken: true  # set false if agent does not need K8s API access
+      annotations: {}                     # e.g. eks.amazonaws.com/role-arn for IRSA
+    rbac:
+      # namespaced Role + RoleBinding
+      create: false
+      rules: []
+      # cluster-scope ClusterRole + ClusterRoleBinding
+      createClusterRole: false
+      clusterRules: []
+    # ⚠️ PDB with minAvailable: 1 combined with the hardcoded replicas: 1 will prevent
+    # node drains. Use maxUnavailable: 1 instead if you need drain support.
+    podDisruptionBudget:
+      enabled: false
+      minAvailable: null
+      maxUnavailable: null
     nodeSelector: {}
     tolerations: []
     affinity: {}

@@ -1,0 +1,29 @@
+{{- range $name, $cfg := .Values.agents }}
+{{- if ne (include "openab.agentEnabled" $cfg) "false" }}
+{{- if ($cfg.podDisruptionBudget).enabled }}
+{{- $d := dict "ctx" $ "agent" $name "cfg" $cfg }}
+{{- $pdb := $cfg.podDisruptionBudget }}
+{{- if and (hasKey $pdb "minAvailable") (hasKey $pdb "maxUnavailable") (ne $pdb.minAvailable nil) (ne $pdb.maxUnavailable nil) }}
+{{- fail (printf "agents.%s.podDisruptionBudget: cannot set both minAvailable and maxUnavailable" $name) }}
+{{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "openab.agentFullname" $d }}
+  labels:
+    {{- include "openab.labels" $d | nindent 4 }}
+spec:
+  {{- if ne ($pdb.minAvailable | toString) "<nil>" }}
+  minAvailable: {{ $pdb.minAvailable }}
+  {{- else if ne ($pdb.maxUnavailable | toString) "<nil>" }}
+  maxUnavailable: {{ $pdb.maxUnavailable }}
+  {{- else }}
+  {{- fail (printf "agents.%s.podDisruptionBudget: must set either minAvailable or maxUnavailable" $name) }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "openab.selectorLabels" $d | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- end }}

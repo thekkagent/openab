@@ -1,0 +1,20 @@
+{{- range $name, $cfg := .Values.agents }}
+{{- if ne (include "openab.agentEnabled" $cfg) "false" }}
+{{- if ($cfg.rbac).createClusterRole }}
+{{- $d := dict "ctx" $ "agent" $name "cfg" $cfg }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "openab.agentFullname" $d }}
+  labels:
+    {{- include "openab.labels" $d | nindent 4 }}
+{{- with $cfg.rbac.clusterRules }}
+rules:
+  {{- toYaml . | nindent 2 }}
+{{- else }}
+rules: []
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
