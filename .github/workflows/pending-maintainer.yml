@@ -57,9 +57,15 @@ jobs:
                 continue;
               }
 
-              // Skip if has merge conflicts — ball is on contributor
-              if (pr.mergeable === false) {
-                console.log(`#${prNumber} — has conflicts, skipping`);
+              // Skip if has merge conflicts or already labeled needs-rebase
+              if (pr.mergeable === false || labels.includes('needs-rebase')) {
+                console.log(`#${prNumber} — has conflicts or needs-rebase, skipping`);
+                continue;
+              }
+
+              // Skip if wontfix or not-planned
+              if (labels.includes('wontfix') || labels.includes('not-planned')) {
+                console.log(`#${prNumber} — wontfix/not-planned, skipping`);
                 continue;
               }
 
@@ -80,16 +86,16 @@ jobs:
                 continue;
               }
 
-              // Check last comment is from PR author
-              const { data: comments } = await github.rest.issues.listComments({
+              // Check last comment from a human (skip bot comments) is from PR author
+              const { data: allComments } = await github.rest.issues.listComments({
                 ...context.repo,
                 issue_number: prNumber,
-                per_page: 1,
-                direction: 'desc'
+                per_page: 100
               });
-              if (comments.length === 0) continue;
+              const humanComments = allComments.filter(c => !c.user.type || c.user.type !== 'Bot');
+              if (humanComments.length === 0) continue;
 
-              const lastCommenter = comments[0].user.login;
+              const lastCommenter = humanComments[humanComments.length - 1].user.login;
               if (lastCommenter !== pr.user.login) continue;
 
               // All conditions met: not draft, no conflicts, CI green, author replied
