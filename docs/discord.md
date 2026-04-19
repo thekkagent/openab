@@ -212,6 +212,18 @@ To enable bots to collaborate (e.g. code review → deploy handoff):
 allow_bot_messages = "mentions"
 ```
 
+### Bot turn limits
+
+To prevent runaway bot-to-bot loops, OpenAB enforces two layers of protection:
+
+- **Soft limit** (`max_bot_turns`, default: 20) — consecutive bot turns without human intervention. When reached, the bot sends a warning and stops responding. A human message in the thread resets the counter.
+- **Hard limit** (100, not configurable) — absolute cap on total bot turns per thread. When reached, bot-to-bot conversation is permanently stopped in that thread.
+
+```toml
+[discord]
+max_bot_turns = 30  # default is 20
+```
+
 ### Ice-breaking: teaching bots who's in the room
 
 Since user mentions are preserved as raw `<@UID>`, bots need a UID→name mapping to know who is who. Add an ice-breaking greeting to each bot's system prompt or context entry:

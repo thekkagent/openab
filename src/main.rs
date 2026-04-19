@@ -171,6 +171,8 @@ async fn main() -> anyhow::Result<()> {
                     participated_threads: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                     multibot_threads: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                     session_ttl: std::time::Duration::from_secs(ttl_secs),
+                    max_bot_turns: discord_cfg.max_bot_turns,
+                    bot_turn_counts: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 };
 
                 let intents = GatewayIntents::GUILD_MESSAGES

@@ -19,6 +19,9 @@ use tracing::{debug, error, info};
 /// Prevents runaway loops between multiple bots in "all" mode.
 const MAX_CONSECUTIVE_BOT_TURNS: u8 = 10;
 
+/// Absolute per-thread cap on bot turns. Cannot be overridden by config or human intervention.
+const HARD_BOT_TURN_LIMIT: u32 = 100;
+
 /// Maximum entries in the participation cache before eviction.
 const PARTICIPATION_CACHE_MAX: usize = 1000;
 
@@ -121,6 +124,10 @@ pub struct Handler {
     pub multibot_threads: tokio::sync::Mutex<HashMap<String, tokio::time::Instant>>,
     /// TTL for participation cache entries (from pool.session_ttl_hours).
     pub session_ttl: std::time::Duration,
+    /// Configurable soft limit on bot turns per thread (reset by human message).
+    pub max_bot_turns: u32,
+    /// Per-thread counters: (soft_turns, hard_turns). Soft resets on human msg, hard never resets.
+    pub bot_turn_counts: tokio::sync::Mutex<HashMap<String, (u32, u32)>>,
 }
 
 impl Handler {
@@ -148,12 +155,10 @@ impl Handler {
         };
 
         // Both cached → skip fetch entirely
-        if cached_involved && cached_multibot {
-            return (true, true);
-        }
-        // Involved cached + not MultibotMentions mode → don't need other_bot info
-        if cached_involved && self.allow_user_messages != AllowUsers::MultibotMentions {
-            return (true, false);
+        // With early detection from msg.author, multibot_threads is populated
+        // eagerly — no need to fetch just to check for other bots.
+        if cached_involved {
+            return (true, cached_multibot);
         }
 
         // Fetch recent messages
@@ -321,6 +326,14 @@ impl EventHandler for Handler {
             return;
         }
 
+        // Early multibot detection: if the current message is from another bot,
+        // this thread is multi-bot. Cache it now — no fetch needed.
+        if in_thread && msg.author.bot && msg.author.id != bot_id {
+            let key = msg.channel_id.to_string();
+            let mut cache = self.multibot_threads.lock().await;
+            cache.entry(key).or_insert_with(tokio::time::Instant::now);
+        }
+
         // User message gating (mirrors Slack's AllowUsers logic).
         // Mentions: always require @mention, even in bot's own threads.
         // Involved (default): skip @mention if the bot owns the thread
@@ -379,6 +392,41 @@ impl EventHandler for Handler {
         }
 
         let prompt = resolve_mentions(&msg.content, bot_id);
+
+        // Bot turn limiting: track consecutive bot turns per thread.
+        // Placed after all gating so only messages that will actually be
+        // processed count toward the limit.
+        // Human message resets soft counter; hard counter never resets.
+        {
+            let thread_key = msg.channel_id.to_string();
+            let mut counts = self.bot_turn_counts.lock().await;
+            if msg.author.bot {
+                let (soft, hard) = counts.entry(thread_key).or_insert((0, 0));
+                *soft += 1;
+                *hard += 1;
+                if *hard >= HARD_BOT_TURN_LIMIT {
+                    tracing::warn!(channel_id = %msg.channel_id, hard = *hard, "hard bot turn limit reached");
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        format!("🛑 Hard limit reached ({HARD_BOT_TURN_LIMIT}). Bot-to-bot conversation in this thread has been permanently stopped."),
+                    ).await;
+                    return;
+                }
+                if *soft >= self.max_bot_turns {
+                    tracing::info!(channel_id = %msg.channel_id, soft = *soft, max = self.max_bot_turns, "soft bot turn limit reached");
+                    let _ = msg.channel_id.say(
+                        &ctx.http,
+                        format!("⚠️ Bot turn limit reached ({}/{}). A human must reply in this thread to continue bot-to-bot conversation.", *soft, self.max_bot_turns),
+                    ).await;
+                    return;
+                }
+            } else {
+                // Human message: reset soft counter
+                if let Some((soft, _)) = counts.get_mut(&thread_key) {
+                    *soft = 0;
+                }
+            }
+        }
 
         // No text and no attachments → skip
         if prompt.is_empty() && msg.attachments.is_empty() {

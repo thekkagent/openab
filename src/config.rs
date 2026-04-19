@@ -88,7 +88,13 @@ pub struct DiscordConfig {
     pub trusted_bot_ids: Vec<String>,
     #[serde(default)]
     pub allow_user_messages: AllowUsers,
+    /// Max consecutive bot turns (without human intervention) before throttling.
+    /// Human message resets the counter. Default: 20.
+    #[serde(default = "default_max_bot_turns")]
+    pub max_bot_turns: u32,
 }
+
+fn default_max_bot_turns() -> u32 { 20 }
 
 /// Controls whether the bot responds to user messages in threads without @mention.
 ///
