@@ -80,11 +80,79 @@ pub struct ConfigOption {
 }
 
 /// Extract configOptions from a JSON-RPC result value.
+/// Supports standard `configOptions` and kiro-cli's `models`/`modes` fallback.
 pub fn parse_config_options(result: &Value) -> Vec<ConfigOption> {
-    result
+    if let Some(opts) = result
         .get("configOptions")
         .and_then(|v| serde_json::from_value::<Vec<ConfigOption>>(v.clone()).ok())
-        .unwrap_or_default()
+    {
+        if !opts.is_empty() {
+            return opts;
+        }
+    }
+
+    // Kiro-cli fallback: parse models/modes format
+    let mut options = Vec::new();
+
+    if let Some(models) = result.get("models") {
+        let current = models.get("currentModelId").and_then(|v| v.as_str()).unwrap_or("");
+        if let Some(available) = models.get("availableModels").and_then(|v| v.as_array()) {
+            let values: Vec<ConfigOptionValue> = available
+                .iter()
+                .filter_map(|m| {
+                    let id = m.get("modelId").or_else(|| m.get("id")).and_then(|v| v.as_str())?;
+                    let name = m.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+                    Some(ConfigOptionValue {
+                        value: id.to_string(),
+                        name: name.to_string(),
+                        description: m.get("description").and_then(|v| v.as_str()).map(String::from),
+                    })
+                })
+                .collect();
+            if !values.is_empty() {
+                options.push(ConfigOption {
+                    id: "model".to_string(),
+                    name: "Model".to_string(),
+                    description: Some("AI model selection".to_string()),
+                    category: Some("model".to_string()),
+                    option_type: "enum".to_string(),
+                    current_value: current.to_string(),
+                    options: values,
+                });
+            }
+        }
+    }
+
+    if let Some(modes) = result.get("modes") {
+        let current = modes.get("currentModeId").and_then(|v| v.as_str()).unwrap_or("");
+        if let Some(available) = modes.get("availableModes").and_then(|v| v.as_array()) {
+            let values: Vec<ConfigOptionValue> = available
+                .iter()
+                .filter_map(|m| {
+                    let id = m.get("id").and_then(|v| v.as_str())?;
+                    let name = m.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+                    Some(ConfigOptionValue {
+                        value: id.to_string(),
+                        name: name.to_string(),
+                        description: m.get("description").and_then(|v| v.as_str()).map(String::from),
+                    })
+                })
+                .collect();
+            if !values.is_empty() {
+                options.push(ConfigOption {
+                    id: "agent".to_string(),
+                    name: "Agent".to_string(),
+                    description: Some("Agent mode selection".to_string()),
+                    category: Some("agent".to_string()),
+                    option_type: "enum".to_string(),
+                    current_value: current.to_string(),
+                    options: values,
+                });
+            }
+        }
+    }
+
+    options
 }
 
 // --- ACP notification classification ---

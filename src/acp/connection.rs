@@ -280,7 +280,7 @@ impl AcpConnection {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub async fn send_raw(&self, data: &str) -> Result<()> {
+    pub(crate) async fn send_raw(&self, data: &str) -> Result<()> {
         debug!(data = data.trim(), "acp_send");
         let mut w = self.stdin.lock().await;
         w.write_all(data.as_bytes()).await?;
@@ -381,12 +381,36 @@ impl AcpConnection {
                     "value": value,
                 })),
             )
-            .await?;
+            .await;
 
-        if let Some(result) = resp.result.as_ref() {
-            self.config_options = parse_config_options(result);
+        match resp {
+            Ok(r) => {
+                if let Some(result) = r.result.as_ref() {
+                    self.config_options = parse_config_options(result);
+                }
+                info!(config_id, value, "config option set");
+            }
+            Err(_) => {
+                // Fall back: send as a slash command (e.g. "/model claude-sonnet-4")
+                let cmd = format!("/{config_id} {value}");
+                info!(cmd, "set_config_option not supported, falling back to prompt");
+                let _resp = self
+                    .send_request(
+                        "session/prompt",
+                        Some(json!({
+                            "sessionId": session_id,
+                            "prompt": [{"type": "text", "text": cmd}],
+                        })),
+                    )
+                    .await?;
+                for opt in &mut self.config_options {
+                    if opt.id == config_id {
+                        opt.current_value = value.to_string();
+                    }
+                }
+            }
         }
-        info!(config_id, value, "config option set");
+
         Ok(self.config_options.clone())
     }
 
