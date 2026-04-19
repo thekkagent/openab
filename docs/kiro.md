@@ -53,25 +53,24 @@ kubectl rollout restart deployment/openab-kiro
 
 ## Slash Commands
 
-### `/models` — Switch AI Model
-
-When using Kiro CLI as the backend, the `/models` slash command lets users dynamically switch models via a Discord select menu.
-
-**How it works:**
-1. Kiro CLI returns available models via ACP `configOptions` (category: `"model"`) on session creation
-2. User types `/models` in a thread with an active session
-3. A select menu appears with available models (e.g. Sonnet 4, Opus 4, Haiku 4)
-4. User picks a model → OpenAB sends `session/set_config_option` to Kiro
-5. Model switches immediately for that session
-
-**Note:** The `/models` command only works in threads where a conversation is already active. If no session exists, it will prompt the user to start one first.
-
-> ⚠️ This feature has only been tested with Kiro CLI. Other ACP backends (Claude Code, Codex, Gemini) may or may not return `configOptions` with model choices — behavior will vary by agent.
-
-### Future Commands
-
 | Command | Purpose | Status |
 |---------|---------|--------|
 | `/models` | Switch AI model | ✅ Implemented |
-| `/agents` | Switch agent backend | 🔜 Planned |
-| `/cancel` | Cancel current generation | 🔜 Planned |
+| `/agents` | Switch agent mode | ✅ Implemented |
+| `/cancel` | Cancel current generation | ✅ Implemented |
+
+### `/models` — Switch AI Model
+
+Kiro CLI returns available models via ACP `configOptions` (category: `"model"`) on session creation. User types `/models` in a thread → select menu appears → pick a model → OpenAB sends `session/set_config_option` (falls back to `/model <value>` prompt if not supported).
+
+### `/agents` — Switch Agent Mode
+
+Same mechanism as `/models` but for the `agent` category. Kiro CLI exposes modes like `kiro_default` and `kiro_planner` via `configOptions`.
+
+### `/cancel` — Cancel Current Operation
+
+Sends a `session/cancel` JSON-RPC notification to abort in-flight LLM requests and tool calls. Works immediately — no need to wait for the current response to finish.
+
+**Note:** All slash commands only work in threads where a conversation is already active. If no session exists, they will prompt the user to start one first.
+
+See [docs/slash-commands.md](slash-commands.md) for full details.
