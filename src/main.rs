@@ -152,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
                 let allowed_channels =
                     parse_id_set(&discord_cfg.allowed_channels, "discord.allowed_channels")?;
                 if allowed_channels.is_empty() {
-                    warn!("no allowed_channels configured — bot will not respond to any messages. Add at least one channel ID to [discord] allowed_channels.");
+                    warn!("no allowed_channels configured for Discord — bot will not respond to any messages. Add at least one channel ID to [discord] allowed_channels.");
                 }
                 let allowed_users = parse_id_set(&discord_cfg.allowed_users, "discord.allowed_users")?;
                 let trusted_bot_ids = parse_id_set(&discord_cfg.trusted_bot_ids, "discord.trusted_bot_ids")?;
