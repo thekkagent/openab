@@ -11,11 +11,10 @@ metadata:
 data:
   config.toml: |
     {{- if ($cfg.discord).enabled }}
-    {{- if not $cfg.discord.allowedChannels }}
-    {{- fail (printf "agents.%s.discord.allowedChannels is required — empty means the bot will not respond to any messages. Add at least one channel ID." $name) }}
-    {{- end }}
     [discord]
     bot_token = "${DISCORD_BOT_TOKEN}"
+    allow_all_channels = {{ if and (hasKey $cfg.discord "allowAllChannels") (ne $cfg.discord.allowAllChannels nil) }}{{ $cfg.discord.allowAllChannels }}{{ else if $cfg.discord.allowedChannels }}false{{ else }}true{{ end }}
+    allow_all_users = {{ if and (hasKey $cfg.discord "allowAllUsers") (ne $cfg.discord.allowAllUsers nil) }}{{ $cfg.discord.allowAllUsers }}{{ else if $cfg.discord.allowedUsers }}false{{ else }}true{{ end }}
     {{- range $cfg.discord.allowedChannels }}
     {{- if regexMatch "e\\+|E\\+" (toString .) }}
     {{- fail (printf "discord.allowedChannels contains a mangled ID: %s — use --set-string instead of --set for channel IDs" (toString .)) }}
@@ -55,12 +54,11 @@ data:
     {{- end }}
 
     {{- if and ($cfg.slack).enabled }}
-    {{- if not (($cfg.slack).allowedChannels) }}
-    {{- fail (printf "agents.%s.slack.allowedChannels is required — empty means the bot will not respond to any messages. Add at least one channel ID." $name) }}
-    {{- end }}
     [slack]
     bot_token = "${SLACK_BOT_TOKEN}"
     app_token = "${SLACK_APP_TOKEN}"
+    allow_all_channels = {{ if and (hasKey ($cfg.slack) "allowAllChannels") (ne ($cfg.slack).allowAllChannels nil) }}{{ ($cfg.slack).allowAllChannels }}{{ else if ($cfg.slack).allowedChannels }}false{{ else }}true{{ end }}
+    allow_all_users = {{ if and (hasKey ($cfg.slack) "allowAllUsers") (ne ($cfg.slack).allowAllUsers nil) }}{{ ($cfg.slack).allowAllUsers }}{{ else if ($cfg.slack).allowedUsers }}false{{ else }}true{{ end }}
     {{- range ($cfg.slack).allowedChannels }}
     {{- if regexMatch "e\\+|E\\+" (toString .) }}
     {{- fail (printf "slack.allowedChannels contains a mangled ID: %s — use --set-string instead of --set for channel IDs" (toString .)) }}

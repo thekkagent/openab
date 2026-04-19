@@ -73,6 +73,12 @@ fn default_stt_base_url() -> String { "https://api.groq.com/openai/v1".into() }
 #[derive(Debug, Deserialize)]
 pub struct DiscordConfig {
     pub bot_token: String,
+    /// Explicit flag: true = allow all channels, false = check allowed_channels list.
+    /// When not set, auto-detected: non-empty list → false, empty list → true.
+    pub allow_all_channels: Option<bool>,
+    /// Explicit flag: true = allow all users, false = check allowed_users list.
+    /// When not set, auto-detected: non-empty list → false, empty list → true.
+    pub allow_all_users: Option<bool>,
     #[serde(default)]
     pub allowed_channels: Vec<String>,
     #[serde(default)]
@@ -128,6 +134,12 @@ impl<'de> Deserialize<'de> for AllowUsers {
 pub struct SlackConfig {
     pub bot_token: String,
     pub app_token: String,
+    /// Explicit flag: true = allow all channels, false = check allowed_channels list.
+    /// When not set, auto-detected: non-empty list → false, empty list → true.
+    pub allow_all_channels: Option<bool>,
+    /// Explicit flag: true = allow all users, false = check allowed_users list.
+    /// When not set, auto-detected: non-empty list → false, empty list → true.
+    pub allow_all_users: Option<bool>,
     #[serde(default)]
     pub allowed_channels: Vec<String>,
     #[serde(default)]
@@ -264,6 +276,12 @@ impl Default for ReactionTiming {
 }
 
 // --- loading ---
+
+/// Resolve an allow_all flag: if explicitly set, use it; otherwise infer from the list.
+/// Non-empty list → false (respect the list), empty list → true (allow all).
+pub fn resolve_allow_all(flag: Option<bool>, list: &[String]) -> bool {
+    flag.unwrap_or(list.is_empty())
+}
 
 fn expand_env_vars(raw: &str) -> String {
     let re = Regex::new(r"\$\{(\w+)\}").unwrap();

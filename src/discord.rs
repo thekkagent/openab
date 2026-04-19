@@ -110,6 +110,8 @@ impl ChatAdapter for DiscordAdapter {
 
 pub struct Handler {
     pub router: Arc<AdapterRouter>,
+    pub allow_all_channels: bool,
+    pub allow_all_users: bool,
     pub allowed_channels: HashSet<u64>,
     pub allowed_users: HashSet<u64>,
     pub stt_config: SttConfig,
@@ -234,11 +236,8 @@ impl EventHandler for Handler {
         }).clone();
 
         let channel_id = msg.channel_id.get();
-        if self.allowed_channels.is_empty() {
-            debug!("allowed_channels is empty — ignoring message in channel {}", channel_id);
-            return;
-        }
-        let in_allowed_channel = self.allowed_channels.contains(&channel_id);
+        let in_allowed_channel =
+            self.allow_all_channels || self.allowed_channels.contains(&channel_id);
 
         let is_mentioned = msg.mentions_user_id(bot_id)
             || msg.content.contains(&format!("<@{}>", bot_id));
@@ -298,7 +297,7 @@ impl EventHandler for Handler {
         let (in_thread, bot_owns_thread) = if !in_allowed_channel {
             match msg.channel_id.to_channel(&ctx.http).await {
                 Ok(serenity::model::channel::Channel::Guild(gc)) => {
-                    let parent_allowed = gc
+                    let parent_allowed = self.allow_all_channels || gc
                         .parent_id
                         .is_some_and(|pid| self.allowed_channels.contains(&pid.get()));
                     let owned = gc.owner_id.is_some_and(|oid| oid == bot_id);
@@ -387,7 +386,7 @@ impl EventHandler for Handler {
             }
         }
 
-        if !self.allowed_users.is_empty() && !self.allowed_users.contains(&msg.author.id.get()) {
+        if !self.allow_all_users && !self.allowed_users.contains(&msg.author.id.get()) {
             tracing::info!(user_id = %msg.author.id, "denied user, ignoring");
             let msg_ref = discord_msg_ref(&msg);
             let _ = adapter.add_reaction(&msg_ref, "🚫").await;

@@ -111,10 +111,14 @@ async fn main() -> anyhow::Result<()> {
 
             // Spawn Slack adapter (background task)
             let slack_handle = if let Some(slack_cfg) = cfg.slack {
-                if slack_cfg.allowed_channels.is_empty() {
-                    warn!("no allowed_channels configured for Slack — bot will not respond to any messages. Add at least one channel ID to [slack] allowed_channels.");
+                let allow_all_channels = config::resolve_allow_all(slack_cfg.allow_all_channels, &slack_cfg.allowed_channels);
+                let allow_all_users = config::resolve_allow_all(slack_cfg.allow_all_users, &slack_cfg.allowed_users);
+                if !allow_all_channels && slack_cfg.allowed_channels.is_empty() {
+                    warn!("allow_all_channels=false with empty allowed_channels for Slack — bot will deny all channels");
                 }
                 info!(
+                    allow_all_channels,
+                    allow_all_users,
                     channels = slack_cfg.allowed_channels.len(),
                     users = slack_cfg.allowed_users.len(),
                     allow_bot_messages = ?slack_cfg.allow_bot_messages,
@@ -128,6 +132,8 @@ async fn main() -> anyhow::Result<()> {
                     if let Err(e) = slack::run_slack_adapter(
                         slack_cfg.bot_token,
                         slack_cfg.app_token,
+                        allow_all_channels,
+                        allow_all_users,
                         slack_cfg.allowed_channels.into_iter().collect(),
                         slack_cfg.allowed_users.into_iter().collect(),
                         slack_cfg.allow_bot_messages,
@@ -149,14 +155,18 @@ async fn main() -> anyhow::Result<()> {
 
             // Run Discord adapter (foreground, blocking) or wait for ctrl_c
             if let Some(discord_cfg) = cfg.discord {
+                let allow_all_channels = config::resolve_allow_all(discord_cfg.allow_all_channels, &discord_cfg.allowed_channels);
+                let allow_all_users = config::resolve_allow_all(discord_cfg.allow_all_users, &discord_cfg.allowed_users);
                 let allowed_channels =
                     parse_id_set(&discord_cfg.allowed_channels, "discord.allowed_channels")?;
-                if allowed_channels.is_empty() {
-                    warn!("no allowed_channels configured for Discord — bot will not respond to any messages. Add at least one channel ID to [discord] allowed_channels.");
+                if !allow_all_channels && allowed_channels.is_empty() {
+                    warn!("allow_all_channels=false with empty allowed_channels for Discord — bot will deny all channels");
                 }
                 let allowed_users = parse_id_set(&discord_cfg.allowed_users, "discord.allowed_users")?;
                 let trusted_bot_ids = parse_id_set(&discord_cfg.trusted_bot_ids, "discord.trusted_bot_ids")?;
                 info!(
+                    allow_all_channels,
+                    allow_all_users,
                     channels = allowed_channels.len(),
                     users = allowed_users.len(),
                     trusted_bots = trusted_bot_ids.len(),
@@ -167,6 +177,8 @@ async fn main() -> anyhow::Result<()> {
 
                 let handler = discord::Handler {
                     router,
+                    allow_all_channels,
+                    allow_all_users,
                     allowed_channels,
                     allowed_users,
                     stt_config: cfg.stt.clone(),
