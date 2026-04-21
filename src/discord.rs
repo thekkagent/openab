@@ -458,8 +458,13 @@ impl EventHandler for Handler {
             is_bot: msg.author.bot,
         };
 
-        // Build extra content blocks from attachments (images, audio)
+        // Build extra content blocks from attachments (audio → STT, text → inline, image → encode)
         let mut extra_blocks = Vec::new();
+        let mut text_file_bytes: u64 = 0;
+        let mut text_file_count: u32 = 0;
+        const TEXT_TOTAL_CAP: u64 = 1024 * 1024; // 1 MB total for all text file attachments
+        const TEXT_FILE_COUNT_CAP: u32 = 5;
+
         for attachment in &msg.attachments {
             let mime = attachment.content_type.as_deref().unwrap_or("");
             if media::is_audio_mime(mime) {
@@ -482,6 +487,28 @@ impl EventHandler for Handler {
                     tracing::warn!(filename = %attachment.filename, "skipping audio attachment (STT disabled)");
                     let msg_ref = discord_msg_ref(&msg);
                     let _ = adapter.add_reaction(&msg_ref, "🎤").await;
+                }
+            } else if media::is_text_file(&attachment.filename, attachment.content_type.as_deref()) {
+                if text_file_count >= TEXT_FILE_COUNT_CAP {
+                    tracing::warn!(filename = %attachment.filename, count = text_file_count, "text file count cap reached, skipping");
+                    continue;
+                }
+                // Pre-check with Discord-reported size (fast path, avoids unnecessary download).
+                // Running total uses actual downloaded bytes for accurate accounting.
+                if text_file_bytes + u64::from(attachment.size) > TEXT_TOTAL_CAP {
+                    tracing::warn!(filename = %attachment.filename, total = text_file_bytes, "text attachments total exceeds 1MB cap, skipping remaining");
+                    continue;
+                }
+                if let Some((block, actual_bytes)) = media::download_and_read_text_file(
+                    &attachment.url,
+                    &attachment.filename,
+                    u64::from(attachment.size),
+                    None,
+                ).await {
+                    text_file_bytes += actual_bytes;
+                    text_file_count += 1;
+                    debug!(filename = %attachment.filename, "adding text file attachment");
+                    extra_blocks.push(block);
                 }
             } else if let Some(block) = media::download_and_encode_image(
                 &attachment.url,
