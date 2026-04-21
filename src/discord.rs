@@ -361,7 +361,14 @@ impl EventHandler for Handler {
                 );
                 (parent_allowed, owned)
             }
-            _ => (false, false),
+            Ok(other) => {
+                tracing::debug!(channel_id = %msg.channel_id, kind = ?other, "not a guild thread");
+                (false, false)
+            }
+            Err(e) => {
+                tracing::debug!(channel_id = %msg.channel_id, error = %e, "to_channel failed");
+                (false, false)
+            }
         };
 
         if !in_allowed_channel && !in_thread {
