@@ -874,10 +874,16 @@ fn resolve_mentions(content: &str, bot_id: UserId) -> String {
 }
 
 /// Pure thread detection: determines whether a channel is a Discord thread
-/// and whether the bot owns it, using only the channel's properties.
+/// in an allowed parent, and whether the bot owns it.
+///
+/// Returns `(in_allowed_thread, bot_owns)`:
+/// - `in_allowed_thread`: true only if the channel IS a thread AND its parent
+///   is permitted (via allowlist, `allow_all_channels`, or `in_allowed_channel`).
+/// - `bot_owns`: true if the thread's `owner_id` matches `bot_id`.
 ///
 /// Uses `thread_metadata.is_some()` — the canonical way to identify threads.
-/// `parent_id` is NOT reliable: category children also have `parent_id` set.
+/// `parent_id` is NOT reliable for thread detection: category children also
+/// have `parent_id` set. `parent_id` is only used here for the allowlist check.
 ///
 /// Discord API refs:
 /// - Channel Object (parent_id / thread_metadata fields):
@@ -896,11 +902,11 @@ fn detect_thread(
     if !has_thread_metadata {
         return (false, false);
     }
-    let parent_allowed = in_allowed_channel
+    let in_allowed_thread = in_allowed_channel
         || allow_all_channels
         || parent_id.is_some_and(|pid| allowed_channels.contains(&pid));
     let bot_owns = owner_id.is_some_and(|oid| oid == bot_id);
-    (parent_allowed, bot_owns)
+    (in_allowed_thread, bot_owns)
 }
 
 /// Pure decision function: should this message be processed or ignored?
@@ -1275,6 +1281,18 @@ mod tests {
                 allow_all: false,
                 in_allowed: true,
                 expect: (true, false),
+            },
+            // --- Defensive: partial data ---
+            Case {
+                name: "thread with parent_id = None (defensive, partial API data)",
+                has_thread_metadata: true,
+                parent_id: None,
+                owner_id: Some(BOT),
+                bot_id: BOT,
+                allowed_channels: allowed(&[PARENT_CH]),
+                allow_all: false,
+                in_allowed: false,
+                expect: (false, true), // can't verify parent → not allowed, but bot still owns
             },
         ];
 
