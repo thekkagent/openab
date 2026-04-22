@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 use serenity::builder::{CreateActionRow, CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage, CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, CreateThread, EditMessage};
 use serenity::http::Http;
 use serenity::model::application::{ComponentInteractionDataKind, Interaction};
-use serenity::model::channel::{AutoArchiveDuration, ChannelType, Message, MessageType, ReactionType};
+use serenity::model::channel::{AutoArchiveDuration, Message, MessageType, ReactionType};
 use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, MessageId, UserId};
 use serenity::prelude::*;
@@ -356,23 +356,29 @@ impl EventHandler for Handler {
         }
 
         // Thread detection: single to_channel() call for both allowed and
-        // non-allowed channels. A message is "in a thread" when the channel
-        // type is a thread variant AND the parent is in the allowlist (or allow_all).
+        // non-allowed channels. Uses thread_metadata (not parent_id) to
+        // identify threads — see detect_thread() doc comments for rationale.
         let (in_thread, bot_owns_thread) = match msg.channel_id.to_channel(&ctx.http).await {
-            Ok(serenity::model::channel::Channel::Guild(gc)) if gc.thread_metadata.is_some() => {
-                let parent_allowed = in_allowed_channel
-                    || self.allow_all_channels
-                    || gc.parent_id.is_some_and(|pid| self.allowed_channels.contains(&pid.get()));
-                let owned = gc.owner_id.is_some_and(|oid| oid == bot_id);
+            Ok(serenity::model::channel::Channel::Guild(gc)) => {
+                let result = detect_thread(
+                    gc.thread_metadata.is_some(),
+                    gc.parent_id.map(|id| id.get()),
+                    gc.owner_id.map(|id| id.get()),
+                    bot_id.get(),
+                    &self.allowed_channels,
+                    self.allow_all_channels,
+                    in_allowed_channel,
+                );
                 tracing::debug!(
                     channel_id = %msg.channel_id,
                     parent_id = ?gc.parent_id,
                     owner_id = ?gc.owner_id,
-                    parent_allowed,
-                    bot_owns = owned,
+                    has_thread_metadata = gc.thread_metadata.is_some(),
+                    in_thread = result.0,
+                    bot_owns = result.1,
                     "thread check"
                 );
-                (parent_allowed, owned)
+                result
             }
             Ok(other) => {
                 tracing::debug!(channel_id = %msg.channel_id, kind = ?other, "not a guild thread");
@@ -787,6 +793,7 @@ async fn get_or_create_thread(
 ) -> anyhow::Result<ChannelRef> {
     let channel = msg.channel_id.to_channel(&ctx.http).await?;
     if let serenity::model::channel::Channel::Guild(ref gc) = channel {
+        // Already in a thread — reuse it. Uses thread_metadata (see detect_thread()).
         if gc.thread_metadata.is_some() {
             return Ok(ChannelRef {
                 platform: "discord".into(),
@@ -866,10 +873,34 @@ fn resolve_mentions(content: &str, bot_id: UserId) -> String {
     out.trim().to_string()
 }
 
-/// Returns `true` if the given `ChannelType` is a Discord thread.
-/// Extracted for testability and to centralise thread detection logic.
-fn is_thread_channel(kind: ChannelType) -> bool {
-    matches!(kind, ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::NewsThread)
+/// Pure thread detection: determines whether a channel is a Discord thread
+/// and whether the bot owns it, using only the channel's properties.
+///
+/// Uses `thread_metadata.is_some()` — the canonical way to identify threads.
+/// `parent_id` is NOT reliable: category children also have `parent_id` set.
+///
+/// Discord API refs:
+/// - Channel Object (parent_id / thread_metadata fields):
+///   https://docs.discord.com/developers/resources/channel#channel-object
+/// - Thread Metadata ("thread-specific fields not needed by other channels"):
+///   https://docs.discord.com/developers/resources/channel#thread-metadata-object
+fn detect_thread(
+    has_thread_metadata: bool,
+    parent_id: Option<u64>,
+    owner_id: Option<u64>,
+    bot_id: u64,
+    allowed_channels: &HashSet<u64>,
+    allow_all_channels: bool,
+    in_allowed_channel: bool,
+) -> (bool, bool) {
+    if !has_thread_metadata {
+        return (false, false);
+    }
+    let parent_allowed = in_allowed_channel
+        || allow_all_channels
+        || parent_id.is_some_and(|pid| allowed_channels.contains(&pid));
+    let bot_owns = owner_id.is_some_and(|oid| oid == bot_id);
+    (parent_allowed, bot_owns)
 }
 
 /// Pure decision function: should this message be processed or ignored?
@@ -1078,45 +1109,186 @@ mod tests {
         ));
     }
 
-    // --- is_thread_channel tests (regression for #518) ---
+    /// After soft limit fires once (n==20), subsequent bot messages still return
+    /// SoftLimit but with n>20. The caller warns only when n==max (exact hit),
+    /// preventing warning messages from ping-ponging between bots.
+    #[test]
+    fn soft_limit_warn_once_semantics() {
+        let mut t = BotTurnTracker::new(20);
+        for _ in 0..19 {
+            assert_eq!(t.on_bot_message("t1"), TurnResult::Ok);
+        }
+        // n==20: exact hit — caller should send warning
+        assert_eq!(t.on_bot_message("t1"), TurnResult::SoftLimit(20));
+        // n==21: past limit — caller should silently return (no warning)
+        assert_eq!(t.on_bot_message("t1"), TurnResult::Throttled);
+        // n==22: still past — still silent
+        assert_eq!(t.on_bot_message("t1"), TurnResult::Throttled);
+    }
+
+    /// Hard limit also carries count for warn-once semantics.
+    #[test]
+    fn hard_limit_warn_once_semantics() {
+        let mut t = BotTurnTracker::new(HARD_BOT_TURN_LIMIT + 1); // soft > hard so hard fires first
+        for _ in 0..HARD_BOT_TURN_LIMIT - 1 {
+            assert_eq!(t.on_bot_message("t1"), TurnResult::Ok);
+        }
+        // Exact hit — warn
+        assert_eq!(t.on_bot_message("t1"), TurnResult::HardLimit);
+        // Past — silent
+        assert_eq!(t.on_bot_message("t1"), TurnResult::Stopped);
+    }
+
+    /// Regression test for #497: system messages (thread created, pin, etc.)
+    /// should NOT reset the bot turn counter. The filtering happens at the
+    /// call site (MessageType check); this verifies the counter stays put
+    /// when on_human_message is never called.
+    #[test]
+    fn system_message_does_not_reset_counter() {
+        let mut t = BotTurnTracker::new(3);
+        assert_eq!(t.on_bot_message("t1"), TurnResult::Ok);
+        assert_eq!(t.on_bot_message("t1"), TurnResult::Ok);
+        // No on_human_message (system message filtered out at call site)
+        assert_eq!(t.on_bot_message("t1"), TurnResult::SoftLimit(3));
+    }
+
+    // --- detect_thread tests (regression for #506 → #518 → #519) ---
     // PR #506 used parent_id.is_some() to detect threads, but category text
     // channels also have parent_id (pointing to the category). This caused
     // the bot to skip thread creation for normal channels inside categories.
+    //
+    // detect_thread() uses thread_metadata.is_some() — the canonical check
+    // per Discord API docs. Table-driven to cover all channel scenarios.
 
-    /// Regression test for #518: a text channel inside a category has parent_id
-    /// set but is NOT a thread — is_thread_channel must return false.
-    #[test]
-    fn category_text_channel_is_not_thread() {
-        assert!(!is_thread_channel(ChannelType::Text));
+    const BOT: u64 = 1000;
+    const OTHER: u64 = 2000;
+    const PARENT_CH: u64 = 100;
+    const CATEGORY: u64 = 200;
+
+    /// Helper: build an allowed_channels set from a slice.
+    fn allowed(ids: &[u64]) -> HashSet<u64> {
+        ids.iter().copied().collect()
     }
 
-    /// Category channel itself is not a thread.
+    /// Table-driven: each row is a realistic Discord channel scenario.
     #[test]
-    fn category_channel_is_not_thread() {
-        assert!(!is_thread_channel(ChannelType::Category));
-    }
+    fn detect_thread_table() {
+        struct Case {
+            name: &'static str,
+            has_thread_metadata: bool,
+            parent_id: Option<u64>,
+            owner_id: Option<u64>,
+            bot_id: u64,
+            allowed_channels: HashSet<u64>,
+            allow_all: bool,
+            in_allowed: bool,
+            expect: (bool, bool), // (in_thread, bot_owns)
+        }
 
-    /// Voice channel is not a thread.
-    #[test]
-    fn voice_channel_is_not_thread() {
-        assert!(!is_thread_channel(ChannelType::Voice));
-    }
+        let cases = vec![
+            // --- Non-thread channels: thread_metadata = None ---
+            Case {
+                name: "text channel under category (regression #506)",
+                has_thread_metadata: false,
+                parent_id: Some(CATEGORY), // points to category, NOT a thread
+                owner_id: None,
+                bot_id: BOT,
+                allowed_channels: allowed(&[]),
+                allow_all: false,
+                in_allowed: true,
+                expect: (false, false),
+            },
+            Case {
+                name: "top-level text channel (no category)",
+                has_thread_metadata: false,
+                parent_id: None,
+                owner_id: None,
+                bot_id: BOT,
+                allowed_channels: allowed(&[]),
+                allow_all: false,
+                in_allowed: true,
+                expect: (false, false),
+            },
+            Case {
+                name: "voice channel under category",
+                has_thread_metadata: false,
+                parent_id: Some(CATEGORY),
+                owner_id: None,
+                bot_id: BOT,
+                allowed_channels: allowed(&[]),
+                allow_all: false,
+                in_allowed: false,
+                expect: (false, false),
+            },
+            // --- Thread channels: thread_metadata = Some ---
+            Case {
+                name: "public thread, parent in allowlist, bot owns",
+                has_thread_metadata: true,
+                parent_id: Some(PARENT_CH),
+                owner_id: Some(BOT),
+                bot_id: BOT,
+                allowed_channels: allowed(&[PARENT_CH]),
+                allow_all: false,
+                in_allowed: false,
+                expect: (true, true),
+            },
+            Case {
+                name: "public thread, parent in allowlist, other user owns",
+                has_thread_metadata: true,
+                parent_id: Some(PARENT_CH),
+                owner_id: Some(OTHER),
+                bot_id: BOT,
+                allowed_channels: allowed(&[PARENT_CH]),
+                allow_all: false,
+                in_allowed: false,
+                expect: (true, false),
+            },
+            Case {
+                name: "thread, parent NOT in allowlist, not allow_all",
+                has_thread_metadata: true,
+                parent_id: Some(PARENT_CH),
+                owner_id: Some(BOT),
+                bot_id: BOT,
+                allowed_channels: allowed(&[]),
+                allow_all: false,
+                in_allowed: false,
+                expect: (false, true),
+            },
+            Case {
+                name: "thread, allow_all_channels = true",
+                has_thread_metadata: true,
+                parent_id: Some(PARENT_CH),
+                owner_id: Some(OTHER),
+                bot_id: BOT,
+                allowed_channels: allowed(&[]),
+                allow_all: true,
+                in_allowed: false,
+                expect: (true, false),
+            },
+            Case {
+                name: "thread, in_allowed_channel = true (parent is the allowed channel)",
+                has_thread_metadata: true,
+                parent_id: Some(PARENT_CH),
+                owner_id: None,
+                bot_id: BOT,
+                allowed_channels: allowed(&[]),
+                allow_all: false,
+                in_allowed: true,
+                expect: (true, false),
+            },
+        ];
 
-    /// PublicThread is correctly detected as a thread.
-    #[test]
-    fn public_thread_is_thread() {
-        assert!(is_thread_channel(ChannelType::PublicThread));
-    }
-
-    /// PrivateThread is correctly detected as a thread.
-    #[test]
-    fn private_thread_is_thread() {
-        assert!(is_thread_channel(ChannelType::PrivateThread));
-    }
-
-    /// NewsThread is correctly detected as a thread.
-    #[test]
-    fn news_thread_is_thread() {
-        assert!(is_thread_channel(ChannelType::NewsThread));
+        for c in &cases {
+            let result = detect_thread(
+                c.has_thread_metadata,
+                c.parent_id,
+                c.owner_id,
+                c.bot_id,
+                &c.allowed_channels,
+                c.allow_all,
+                c.in_allowed,
+            );
+            assert_eq!(result, c.expect, "FAILED: {}", c.name);
+        }
     }
 }
