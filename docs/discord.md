@@ -168,6 +168,23 @@ Each thread gets its own agent session. Sessions are cleaned up after `session_t
 
 ---
 
+## Streaming
+
+OpenAB uses **edit-streaming** on Discord — the bot sends a placeholder message and updates it every 1.5 seconds as tokens arrive, giving a live typing effect.
+
+Streaming is decided **per-thread**, not globally:
+
+| Thread state | Streaming |
+|---|---|
+| Single bot + human | ✅ ON — live edit updates |
+| 2+ bots in thread | ❌ OFF — send-once to avoid edit interference |
+
+When a second bot posts in a thread, streaming automatically switches off for that thread. This prevents multiple bots from editing placeholder messages simultaneously, which causes visual glitches on Discord.
+
+No configuration needed — this is automatic based on multibot detection.
+
+---
+
 ## Multi-Bot Setup
 
 Multiple bots can share the same Discord channel. Each bot only responds to its own @mentions.
